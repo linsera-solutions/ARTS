@@ -26,7 +26,7 @@ export function Interviews() {
     setError(null)
     try {
       const data = await applicationsService.list({ status: 'Discussion / Interview' })
-      setInterviewApps(data || [])
+      setInterviewApps(data?.items || data || [])
     } catch (err) {
       setError(err)
     } finally {

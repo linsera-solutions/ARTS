@@ -22,8 +22,8 @@ export function TeamFormation() {
         rolesService.list(),
         applicationsService.list(),
       ])
-      setRoles(rolesData || [])
-      setApplications(appsData || [])
+      setRoles(rolesData?.items || rolesData || [])
+      setApplications(appsData?.items || appsData || [])
     } catch (err) {
       setError(err)
     } finally {

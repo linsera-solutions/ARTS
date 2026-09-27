@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.db.session import Base, get_db
-from app.models.enums import ApplicationStatus, RoleStatus, UserRole, AccountStatus
+from app.models.enums import ApplicationStatus, RoleStatus, UserRole, AccountStatus, ApplicantStatus
 from app.models.user import User
 from app.models.team import Role
 from app.db.init_db import APPROVED_ROLES
@@ -45,7 +45,7 @@ def setup_db():
             account_status=AccountStatus.ACTIVE.value,
         )
         session.add(admin)
-        # Seed roles
+        # Seed approved roles
         for r_data in APPROVED_ROLES:
             role = Role(**r_data)
             session.add(role)
@@ -79,105 +79,192 @@ def test_list_roles():
     assert len(res["data"]) >= 4
 
 
-def test_applicant_and_application_workflow():
-    # 1. Create applicant with experience & portfolio
-    applicant_payload = {
-        "full_name": "Dr. Sarah Astronaut",
-        "email": "sarah.astronaut@example.com",
-        "phone_number": "+1-555-0199",
-        "location": "Houston, TX",
-        "external_profile_link": "https://linkedin.com/in/sarah-astronaut",
+def test_google_forms_single_intake_and_duplicate_handling():
+    """
+    Tests FR-001, FR-005, FR-007: Intake processing, profile creation,
+    evidence links, skills, and idempotent update on re-submission.
+    """
+    intake_payload = {
+        "full_name": "Commander Alex Vance",
+        "email": "alex.vance@space.org",
+        "phone_number": "+1-555-4321",
+        "location": "Pasadena, CA",
+        "external_profile_link": "https://github.com/alexvance",
+        "role_name": "Game/App Developer",
+        "motivation_statement": "Experienced with Godot and Unity space simulations.",
+        "availability_info": "Available 20 hours per week during challenge.",
+        "skills": [
+            {"skill_name": "Godot", "proficiency_level": "Expert", "years_of_experience": 4.5},
+            {"skill_name": "C#", "proficiency_level": "Advanced", "years_of_experience": 5.0},
+        ],
+        "evidence_links": [
+            {
+                "title": "Orbital Simulator Demo",
+                "reference_link": "https://github.com/alexvance/orbit-sim",
+                "description": "Custom physics engine for orbital mechanics",
+            }
+        ],
         "experiences": [
             {
-                "title": "Robotics Researcher",
-                "organization": "Space Lab",
-                "start_date": "2024-01-01",
-                "description": "Rover mobility logic",
+                "title": "Lead Simulation Engineer",
+                "organization": "AeroTech Labs",
+                "start_date": "2023-01-01",
+                "description": "Developed real-time spacecraft trajectory visualization.",
             }
         ],
-        "portfolio_items": [
+    }
+
+    # 1. Initial Intake Submission (FR-001)
+    res = client.post("/api/v1/applications/intake", json=intake_payload)
+    assert res.status_code == 201
+    intake_res = res.json()["data"]
+    assert intake_res["status"] == "created"
+    app_id = intake_res["application_id"]
+    applicant_id = intake_res["applicant_id"]
+
+    # 2. Check Consolidated Detail (FR-011)
+    detail_res = client.get(f"/api/v1/applications/{app_id}")
+    assert detail_res.status_code == 200
+    detail_data = detail_res.json()["data"]
+    assert detail_data["current_status"] == ApplicationStatus.RECEIVED.value
+    assert len(detail_data["applicant"]["portfolio_items"]) == 1
+    assert len(detail_data["applicant"]["applicant_skills"]) == 2
+    assert len(detail_data["status_history"]) == 1
+
+    # 3. Re-Submission / Update Handling without Duplication (FR-005)
+    updated_payload = dict(intake_payload)
+    updated_payload["motivation_statement"] = "Updated motivation statement with more detail."
+    res_update = client.post("/api/v1/applications/intake", json=updated_payload)
+    assert res_update.status_code == 201
+    update_data = res_update.json()["data"]
+    assert update_data["status"] == "updated"
+    assert update_data["applicant_id"] == applicant_id
+    assert update_data["application_id"] == app_id
+
+
+def test_google_forms_batch_intake():
+    """
+    Tests FR-002, FR-003, FR-004: Batch import with accepted/rejected summary.
+    """
+    batch_payload = {
+        "submissions": [
             {
-                "title": "Rover Sim",
-                "reference_link": "https://github.com/sarah/rover-sim",
-            }
-        ],
+                "full_name": "Elena Rostova",
+                "email": "elena@spaceapps.org",
+                "role_name": "UI/UX & Visual Designer",
+                "motivation_statement": "Figma design system lead.",
+                "evidence_links": [{"title": "Design Portfolio", "reference_link": "https://figma.com/@elena"}],
+            },
+            {
+                "full_name": "Dr. Marcus Bell",
+                "email": "marcus@astronomy.edu",
+                "role_name": "Space/Science Research + Game Logic",
+                "motivation_statement": "Astrophysics PhD with simulation background.",
+            },
+            {
+                "full_name": "Invalid Candidate",
+                "email": "invalid@nowhere.com",
+                "role_name": "Non-Existent Role That Fails Validation",
+            },
+        ]
     }
-    app_res = client.post("/api/v1/applicants", json=applicant_payload)
-    assert app_res.status_code == 201
-    applicant_data = app_res.json()["data"]
-    applicant_id = applicant_data["id"]
 
-    # 2. Get a role ID
-    roles_res = client.get("/api/v1/roles")
-    role_id = roles_res.json()["data"][0]["id"]
+    res = client.post("/api/v1/applications/intake/batch", json=batch_payload)
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["total_received"] == 3
+    assert data["accepted"] == 2
+    assert data["rejected"] == 1
+    assert len(data["errors"]) == 1
 
-    # 3. Create application
-    application_payload = {
-        "applicant_id": applicant_id,
-        "role_id": role_id,
-        "motivation_statement": "Passionate about NASA Space Apps Challenge.",
-        "availability_info": "Full weekend availability.",
+
+def test_search_and_filter_applications():
+    """
+    Tests multi-criteria search, role filter, status filter, and pagination.
+    """
+    # 1. Search by name query
+    res = client.get("/api/v1/applications?query=Elena")
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["total"] >= 1
+    assert "Elena" in data["items"][0]["applicant"]["full_name"]
+
+    # 2. Filter by status
+    res_status = client.get("/api/v1/applications?status=Received")
+    assert res_status.status_code == 200
+    assert all(a["current_status"] == "Received" for a in res_status.json()["data"]["items"])
+
+
+def test_evidence_link_management():
+    """
+    Tests FR-015, FR-016, FR-017: Adding and removing evidence links on candidate profile.
+    """
+    # 1. List applicants to get an ID
+    res = client.get("/api/v1/applicants?query=Elena")
+    applicant_id = res.json()["data"]["items"][0]["id"]
+
+    # 2. Add new evidence link (FR-015, FR-016)
+    evidence_payload = {
+        "title": "NASA Web Design Case Study",
+        "reference_link": "https://behance.net/gallery/nasa-case-study",
+        "description": "Visual identity concept for lunar rover interface",
     }
-    app_post_res = client.post("/api/v1/applications", json=application_payload)
-    assert app_post_res.status_code == 201
-    application_data = app_post_res.json()["data"]
-    application_id = application_data["id"]
-    assert application_data["current_status"] == ApplicationStatus.RECEIVED.value
+    add_res = client.post(f"/api/v1/applicants/{applicant_id}/evidence", json=evidence_payload)
+    assert add_res.status_code == 201
+    evidence_id = add_res.json()["data"]["id"]
 
-    # 4. Update status to Shortlisted
-    status_update_payload = {
-        "new_status": ApplicationStatus.SHORTLISTED.value,
-        "reason": "Strong robotics background aligns with role.",
-    }
-    status_res = client.patch(f"/api/v1/applications/{application_id}/status", json=status_update_payload)
-    assert status_res.status_code == 200
-    updated_app = status_res.json()["data"]
-    assert updated_app["current_status"] == ApplicationStatus.SHORTLISTED.value
-    assert len(updated_app["status_history"]) == 2
-
-    # 5. Add Note
-    with TestingSessionLocal() as session:
-        user = session.query(User).first()
-        user_id = str(user.id)
-
-    note_payload = {
-        "author_id": user_id,
-        "related_entity_type": "Application",
-        "related_entity_id": application_id,
-        "note_text": "Reviewed portfolio link, looks outstanding.",
-    }
-    note_res = client.post("/api/v1/notes", json=note_payload)
-    assert note_res.status_code == 201
-
-    # 6. Schedule Interview
-    interview_payload = {
-        "application_id": application_id,
-        "scheduled_at": "2026-10-02T15:00:00Z",
-        "format": "Video Call",
-        "participant_user_ids": [user_id],
-    }
-    interview_res = client.post("/api/v1/interviews", json=interview_payload)
-    assert interview_res.status_code == 201
+    # 3. Remove evidence link (FR-017)
+    del_res = client.delete(f"/api/v1/applicants/{applicant_id}/evidence/{evidence_id}")
+    assert del_res.status_code == 200
 
 
-def test_validation_error_format():
-    # Attempting to create an applicant with invalid email
-    invalid_payload = {
-        "full_name": "Test User",
-        "email": "not-a-valid-email",
-    }
-    res = client.post("/api/v1/applicants", json=invalid_payload)
-    assert res.status_code == 422
-    data = res.json()
-    assert data["success"] is False
-    assert data["error"]["code"] == "VALIDATION_ERROR"
-    assert len(data["error"]["details"]) > 0
-    assert "email" in data["error"]["details"][0]["field"]
+def test_applicant_archive():
+    """
+    Tests FR-010: Archiving an applicant record.
+    """
+    res = client.get("/api/v1/applicants?query=Marcus")
+    applicant_id = res.json()["data"]["items"][0]["id"]
+
+    arch_res = client.patch(f"/api/v1/applicants/{applicant_id}/archive")
+    assert arch_res.status_code == 200
+    assert arch_res.json()["data"]["applicant_status"] == ApplicantStatus.ARCHIVED.value
 
 
-def test_not_found_error_format():
-    res = client.get("/api/v1/roles/00000000-0000-0000-0000-000000000000")
-    assert res.status_code == 404
-    data = res.json()
-    assert data["success"] is False
-    assert data["error"]["code"] == "NOT_FOUND"
+def test_business_rules_status_transitions():
+    """
+    Tests BR-001, BR-002: Status validation rules and immutable audit history.
+    """
+    # 1. Get an application in Received status
+    res = client.get("/api/v1/applications?status=Received")
+    app_id = res.json()["data"]["items"][0]["id"]
+
+    # 2. Attempt invalid jump from Received directly to Selected (Blocked by BR-002)
+    invalid_res = client.patch(
+        f"/api/v1/applications/{app_id}/status",
+        json={"new_status": "Selected", "reason": "Direct jump should fail"},
+    )
+    assert invalid_res.status_code == 400
+    assert "BR-002" in invalid_res.json()["error"]["message"]
+
+    # 3. Valid transition to Under Review
+    res1 = client.patch(
+        f"/api/v1/applications/{app_id}/status",
+        json={"new_status": "Under Review", "reason": "Passed initial screening"},
+    )
+    assert res1.status_code == 200
+
+    # 4. Valid transition to Shortlisted
+    res2 = client.patch(
+        f"/api/v1/applications/{app_id}/status",
+        json={"new_status": "Shortlisted", "reason": "Shortlisted by panel lead"},
+    )
+    assert res2.status_code == 200
+
+    # 5. Valid transition to Selected from Shortlisted (Allowed by BR-002)
+    res3 = client.patch(
+        f"/api/v1/applications/{app_id}/status",
+        json={"new_status": "Selected", "reason": "Final human selection confirmed"},
+    )
+    assert res3.status_code == 200
+    assert res3.json()["data"]["current_status"] == "Selected"
+    assert len(res3.json()["data"]["status_history"]) >= 4

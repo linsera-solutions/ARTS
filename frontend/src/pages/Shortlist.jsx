@@ -23,8 +23,8 @@ export function Shortlist() {
         applicationsService.list({ status: 'Shortlisted' }),
         rolesService.list(),
       ])
-      setShortlistedApps(appsData || [])
-      setRoles(rolesData || [])
+      setShortlistedApps(appsData?.items || appsData || [])
+      setRoles(rolesData?.items || rolesData || [])
     } catch (err) {
       setError(err)
     } finally {

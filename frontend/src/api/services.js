@@ -16,12 +16,17 @@ export const applicantsService = {
   get: (id) => apiClient.get(`/applicants/${id}`),
   create: (data) => apiClient.post('/applicants', data),
   update: (id, data) => apiClient.patch(`/applicants/${id}`, data),
+  addEvidence: (id, data) => apiClient.post(`/applicants/${id}/evidence`, data),
+  removeEvidence: (id, evidenceId) => apiClient.delete(`/applicants/${id}/evidence/${evidenceId}`),
+  archive: (id) => apiClient.patch(`/applicants/${id}/archive`),
 }
 
 export const applicationsService = {
   list: (params) => apiClient.get('/applications', params),
   get: (id) => apiClient.get(`/applications/${id}`),
   create: (data) => apiClient.post('/applications', data),
+  intake: (data) => apiClient.post('/applications/intake', data),
+  batchIntake: (data) => apiClient.post('/applications/intake/batch', data),
   updateStatus: (id, data) => apiClient.patch(`/applications/${id}/status`, data),
 }
 

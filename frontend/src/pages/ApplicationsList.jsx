@@ -48,8 +48,8 @@ export function ApplicationsList() {
         }),
         rolesService.list(),
       ])
-      setApplications(appsData || [])
-      setRoles(rolesData || [])
+      setApplications(appsData?.items || appsData || [])
+      setRoles(rolesData?.items || rolesData || [])
     } catch (err) {
       setError(err)
     } finally {
