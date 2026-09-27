@@ -1,30 +1,20 @@
 from fastapi import APIRouter
-from app.core.config import settings
-from app.db.connection import verify_database_connection
+from app.api.v1.endpoints import (
+    health_router,
+    roles_router,
+    applicants_router,
+    applications_router,
+    evaluations_router,
+    interviews_router,
+    notes_router,
+)
 
 api_router = APIRouter()
 
-
-@api_router.get("/status", summary="Service Status")
-def get_status():
-    """
-    Returns the basic health/service status of the ARTS backend API.
-    """
-    return {
-        "status": "online",
-        "service": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-        "environment": settings.ENVIRONMENT,
-    }
-
-
-@api_router.get("/health/db", summary="Database Health Check")
-def check_db_health():
-    """
-    Verifies database connectivity without exposing sensitive credentials.
-    """
-    db_status = verify_database_connection()
-    return {
-        "status": "healthy" if db_status.get("postgres_connected") else "unconnected",
-        "database": db_status,
-    }
+api_router.include_router(health_router, prefix="/health", tags=["Health"])
+api_router.include_router(roles_router, prefix="/roles", tags=["Roles"])
+api_router.include_router(applicants_router, prefix="/applicants", tags=["Applicants"])
+api_router.include_router(applications_router, prefix="/applications", tags=["Applications"])
+api_router.include_router(evaluations_router, prefix="/evaluations", tags=["Evaluations"])
+api_router.include_router(interviews_router, prefix="/interviews", tags=["Interviews"])
+api_router.include_router(notes_router, prefix="/notes", tags=["Notes"])
