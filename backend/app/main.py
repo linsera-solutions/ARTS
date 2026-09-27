@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
+from app.db.connection import verify_database_connection
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -31,9 +32,20 @@ def root():
         "message": "Welcome to ARTS (Applicant Review & Team Selection System) API",
         "docs": f"{settings.API_V1_STR}/docs",
         "health": "/health",
+        "version": settings.VERSION,
+        "environment": settings.ENVIRONMENT,
     }
 
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "healthy"}
+    db_status = verify_database_connection()
+    return {
+        "status": "healthy",
+        "environment": settings.ENVIRONMENT,
+        "database": {
+            "postgres_connected": db_status["postgres_connected"],
+            "supabase_client_ready": db_status["supabase_client_ready"],
+            "message": db_status["message"],
+        },
+    }

@@ -1,12 +1,19 @@
-from typing import List, Union
-from pydantic import AnyHttpUrl, field_validator
+from typing import List, Optional, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # App Settings
     PROJECT_NAME: str = "ARTS API"
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = "development"  # development, testing, staging, production
+    DEBUG: bool = True
+
+    # Backend Server Configuration
+    BACKEND_HOST: str = "0.0.0.0"
+    BACKEND_PORT: int = 8000
 
     # CORS configuration
     BACKEND_CORS_ORIGINS: List[str] = [
@@ -15,12 +22,32 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
 
+    # Database Configuration (Supabase PostgreSQL direct URI)
+    DATABASE_URL: Optional[str] = None
+
+    # Supabase Client Configuration
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_KEY: Optional[str] = None  # Anon / Public Key
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None  # Admin/Service Role Key (Backend Only)
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",") if i.strip()]
         return v
+
+    @property
+    def sqlalchemy_database_uri(self) -> Optional[str]:
+        """
+        Ensures the SQLAlchemy database URI uses the correct driver prefix.
+        PostgreSQL connection strings starting with 'postgres://' are normalized to 'postgresql://'.
+        """
+        if not self.DATABASE_URL:
+            return None
+        if self.DATABASE_URL.startswith("postgres://"):
+            return self.DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        return self.DATABASE_URL
 
     model_config = SettingsConfigDict(
         env_file=".env",
