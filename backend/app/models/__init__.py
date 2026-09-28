@@ -20,6 +20,7 @@ from app.models.application import Application, ApplicationStatusHistory
 from app.models.evaluation import EvaluationCriterion, Evaluation, EvaluationScore
 from app.models.interview import Interview, interview_participants
 from app.models.note import Note
+from app.models.sync_log import SyncLog
 
 __all__ = [
     "UserRole",
@@ -53,4 +54,5 @@ __all__ = [
     "Interview",
     "interview_participants",
     "Note",
+    "SyncLog",
 ]

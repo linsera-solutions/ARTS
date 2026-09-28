@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     SUPABASE_KEY: Optional[str] = None  # Anon / Public Key
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None  # Admin/Service Role Key (Backend Only)
 
+    # Google Sheets / Forms Intake Configuration
+    GOOGLE_SHEETS_SPREADSHEET_ID: Optional[str] = None
+    GOOGLE_SHEETS_RANGE: str = "Form Responses 1!A1:Z"
+    GOOGLE_SERVICE_ACCOUNT_FILE: Optional[str] = None
+    GOOGLE_SERVICE_ACCOUNT_JSON: Optional[str] = None
+    GOOGLE_WEBHOOK_SECRET: Optional[str] = None  # Secret token for Google Apps Script webhook calls
+
+    # Authentication & JWT Configuration
+    JWT_SECRET: str = "arts-recruiter-jwt-secret-key-change-in-production-2026"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours default recruiter session
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

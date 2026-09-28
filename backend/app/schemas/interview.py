@@ -1,9 +1,18 @@
-from typing import Optional, List
+﻿from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 from pydantic import Field
 from app.schemas.common import BaseSchema
+from app.schemas.applicant import ApplicantRead
+from app.schemas.role import RoleRead
 from app.models.enums import InterviewStatus
+
+
+class ApplicationSummary(BaseSchema):
+    id: UUID
+    current_status: str
+    applicant: Optional[ApplicantRead] = None
+    role: Optional[RoleRead] = None
 
 
 class InterviewBase(BaseSchema):
@@ -30,3 +39,4 @@ class InterviewRead(InterviewBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    application: Optional[ApplicationSummary] = None

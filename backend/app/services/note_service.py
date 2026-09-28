@@ -1,8 +1,8 @@
-from typing import List
+﻿from typing import List
 from uuid import UUID
 from sqlalchemy.orm import Session
 from app.models.note import Note
-from app.schemas.note import NoteCreate
+from app.schemas.note import NoteCreate, NoteUpdate
 from app.models.enums import NoteRelatedEntityType
 from app.services.base import BaseService
 
@@ -33,6 +33,16 @@ class NoteService(BaseService[Note]):
             visibility=data.visibility.value,
         )
         db.add(note)
+        db.commit()
+        db.refresh(note)
+        return note
+
+    def update_note(self, db: Session, id: UUID, data: NoteUpdate) -> Note:
+        note = self.get(db, id)
+        if data.note_text is not None:
+            note.note_text = data.note_text
+        if data.visibility is not None:
+            note.visibility = data.visibility.value
         db.commit()
         db.refresh(note)
         return note

@@ -6,6 +6,9 @@ from app.schemas.common import BaseSchema
 from app.models.enums import ApplicationStatus, ProficiencyLevel
 from app.schemas.role import RoleRead
 from app.schemas.applicant import ApplicantRead, ExperienceCreate, PortfolioItemCreate
+from app.schemas.evaluation import EvaluationRead
+from app.schemas.interview import InterviewRead
+from app.schemas.note import NoteRead
 
 
 class ApplicationStatusHistoryRead(BaseSchema):
@@ -122,6 +125,16 @@ class ApplicationDetailRead(ApplicationRead):
     Consolidated aggregate profile combining record data, skills, experience,
     availability, evidence links, evaluations, notes, and status (FR-011).
     """
-    evaluations: List[Any] = []
-    interviews: List[Any] = []
-    notes: List[Any] = []
+    evaluations: List[EvaluationRead] = []
+    interviews: List[InterviewRead] = []
+    notes: List[NoteRead] = []
+
+
+class AllowedTransitionsResponse(BaseSchema):
+    """
+    Permitted status transitions for an application based on its current lifecycle state.
+    """
+    application_id: UUID
+    current_status: ApplicationStatus
+    allowed_transitions: List[ApplicationStatus]
+

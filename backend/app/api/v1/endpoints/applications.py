@@ -12,6 +12,7 @@ from app.schemas.application import (
     ApplicationBatchIntakeRequest,
     IntakeSummaryResponse,
     IntakeResultItem,
+    AllowedTransitionsResponse,
 )
 from app.schemas.common import ResponseEnvelope, PaginatedResponse
 from app.models.enums import ApplicationStatus
@@ -99,6 +100,19 @@ def get_application(
     """
     app_details = application_service.get_detailed_application(db, id)
     return ResponseEnvelope(data=app_details)
+
+
+@router.get("/{id}/allowed-transitions", response_model=ResponseEnvelope[AllowedTransitionsResponse], summary="Get Permitted Status Transitions")
+def get_allowed_transitions(
+    id: UUID,
+    db: Session = Depends(get_db),
+):
+    """
+    Returns the current status and list of allowed next statuses for an application
+    according to the approved recruitment workflow (BR-001, BR-002).
+    """
+    transitions = application_service.get_allowed_transitions(db, id)
+    return ResponseEnvelope(data=transitions)
 
 
 @router.patch("/{id}/status", response_model=ResponseEnvelope[ApplicationRead], summary="Transition Application Status")

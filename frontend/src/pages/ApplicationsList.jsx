@@ -1,40 +1,41 @@
-import React, { useState, useEffect } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { applicationsService, rolesService } from '../api/services'
-import { Card } from '../components/common/Card'
-import { Badge } from '../components/common/Badge'
-import { Button } from '../components/common/Button'
-import { LoadingSpinner } from '../components/common/Loading'
-import { ErrorAlert } from '../components/common/ErrorAlert'
-import { EmptyState } from '../components/common/EmptyState'
-import { Modal } from '../components/common/Modal'
-import { Users, Search, Filter, ArrowRight, CheckCircle2 } from 'lucide-react'
+﻿import React, { useState, useEffect } from "react"
+import { Link, useSearchParams } from "react-router-dom"
+import { applicationsService, rolesService } from "../api/services"
+import { Card } from "../components/common/Card"
+import { Badge } from "../components/common/Badge"
+import { Button } from "../components/common/Button"
+import { LoadingSpinner } from "../components/common/Loading"
+import { ErrorAlert } from "../components/common/ErrorAlert"
+import { EmptyState } from "../components/common/EmptyState"
+import { Modal } from "../components/common/Modal"
+import { Users, Search, Filter, ArrowRight, CheckCircle2 } from "lucide-react"
 
 const APPROVED_STATUSES = [
-  'Received',
-  'Under Review',
-  'Shortlisted',
-  'Discussion / Interview',
-  'Selected',
-  'Not Selected',
-  'Withdrawn',
+  "Received",
+  "Under Review",
+  "Shortlisted",
+  "Discussion / Interview",
+  "Selected",
+  "Not Selected",
+  "Withdrawn",
 ]
 
 export function ApplicationsList() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const roleFilter = searchParams.get('role') || ''
-  const statusFilter = searchParams.get('status') || ''
+  const roleFilter = searchParams.get("role") || ""
+  const statusFilter = searchParams.get("status") || ""
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [applications, setApplications] = useState([])
   const [roles, setRoles] = useState([])
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Quick status update modal state
   const [selectedApp, setSelectedApp] = useState(null)
-  const [newStatus, setNewStatus] = useState('')
-  const [statusReason, setStatusReason] = useState('')
+  const [allowedTransitions, setAllowedTransitions] = useState([])
+  const [newStatus, setNewStatus] = useState("")
+  const [statusReason, setStatusReason] = useState("")
   const [updating, setUpdating] = useState(false)
 
   const loadData = async () => {
@@ -45,6 +46,7 @@ export function ApplicationsList() {
         applicationsService.list({
           role_id: roleFilter || undefined,
           status: statusFilter || undefined,
+          page_size: 100,
         }),
         rolesService.list(),
       ])
@@ -61,6 +63,20 @@ export function ApplicationsList() {
     loadData()
   }, [roleFilter, statusFilter])
 
+  const handleOpenStatusModal = async (app) => {
+    setSelectedApp(app)
+    setStatusReason("")
+    try {
+      const trans = await applicationsService.getAllowedTransitions(app.id)
+      const allowed = trans?.allowed_transitions || []
+      setAllowedTransitions(allowed)
+      setNewStatus(allowed[0] || "")
+    } catch (err) {
+      setAllowedTransitions([])
+      setNewStatus("")
+    }
+  }
+
   const handleStatusChangeSubmit = async (e) => {
     e.preventDefault()
     if (!selectedApp || !newStatus) return
@@ -69,11 +85,11 @@ export function ApplicationsList() {
     try {
       await applicationsService.updateStatus(selectedApp.id, {
         new_status: newStatus,
-        reason: statusReason || 'Status update via application list',
+        reason: statusReason || "Status update via application list",
       })
       setSelectedApp(null)
-      setNewStatus('')
-      setStatusReason('')
+      setNewStatus("")
+      setStatusReason("")
       loadData()
     } catch (err) {
       alert(`Failed to update status: ${err.message}`)
@@ -83,8 +99,8 @@ export function ApplicationsList() {
   }
 
   const filteredApps = applications.filter((app) => {
-    const candidateName = app.applicant?.full_name?.toLowerCase() || ''
-    const candidateEmail = app.applicant?.email?.toLowerCase() || ''
+    const candidateName = app.applicant?.full_name?.toLowerCase() || ""
+    const candidateEmail = app.applicant?.email?.toLowerCase() || ""
     const query = searchQuery.toLowerCase()
     return candidateName.includes(query) || candidateEmail.includes(query)
   })
@@ -152,8 +168,8 @@ export function ApplicationsList() {
           title="No applications match your criteria"
           description={
             searchQuery || roleFilter || statusFilter
-              ? 'Try resetting your search or filter options.'
-              : 'Google Forms applicant submissions will appear here.'
+              ? "Try resetting your search or filter options."
+              : "Google Forms applicant submissions will appear here."
           }
         />
       ) : (
@@ -166,7 +182,7 @@ export function ApplicationsList() {
                 <th>Location</th>
                 <th>Status</th>
                 <th>Submitted</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -175,19 +191,19 @@ export function ApplicationsList() {
                   <td>
                     <div className="table-candidate-cell">
                       <strong className="candidate-name">
-                        {app.applicant?.full_name || 'Anonymous Applicant'}
+                        {app.applicant?.full_name || "Anonymous Applicant"}
                       </strong>
                       <span className="candidate-email">{app.applicant?.email}</span>
                     </div>
                   </td>
                   <td>
                     <span className="role-tag">
-                      {app.role?.role_name || 'Role Reference'}
+                      {app.role?.role_name || "Role Reference"}
                     </span>
                   </td>
                   <td>
                     <span className="location-text">
-                      {app.applicant?.location || '—'}
+                      {app.applicant?.location || "—"}
                     </span>
                   </td>
                   <td>
@@ -198,14 +214,11 @@ export function ApplicationsList() {
                       {new Date(app.submission_date).toLocaleDateString()}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: "right" }}>
                     <div className="action-buttons-group">
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedApp(app)
-                          setNewStatus(app.current_status)
-                        }}
+                        onClick={() => handleOpenStatusModal(app)}
                         className="btn btn-outline btn-sm"
                         title="Update candidate lifecycle status"
                       >
@@ -239,6 +252,7 @@ export function ApplicationsList() {
               variant="primary"
               onClick={handleStatusChangeSubmit}
               loading={updating}
+              disabled={allowedTransitions.length === 0}
             >
               Confirm Status Change
             </Button>
@@ -247,38 +261,48 @@ export function ApplicationsList() {
       >
         {selectedApp && (
           <form onSubmit={handleStatusChangeSubmit} className="status-modal-form">
-            <p style={{ margin: '0 0 1rem 0', color: '#475569' }}>
+            <p style={{ margin: "0 0 1rem 0", color: "#475569" }}>
               Candidate: <strong>{selectedApp.applicant?.full_name}</strong>
               <br />
               Role: <em>{selectedApp.role?.role_name}</em>
+              <br />
+              Current Status: <strong>{selectedApp.current_status}</strong>
             </p>
 
-            <div className="form-group">
-              <label className="form-label">New Lifecycle Status</label>
-              <select
-                value={newStatus}
-                onChange={(e) => setNewStatus(e.target.value)}
-                className="form-control"
-                required
-              >
-                {APPROVED_STATUSES.map((st) => (
-                  <option key={st} value={st}>
-                    {st}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {allowedTransitions.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                This application is in a terminal status and cannot be transitioned further.
+              </div>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Permitted Next Status</label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value)}
+                    className="form-control"
+                    required
+                  >
+                    {allowedTransitions.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="form-group" style={{ marginTop: '1rem' }}>
-              <label className="form-label">Decision Note / Rationale</label>
-              <textarea
-                value={statusReason}
-                onChange={(e) => setStatusReason(e.target.value)}
-                placeholder="Provide rationale for advancing or modifying candidate status..."
-                rows={3}
-                className="form-control"
-              />
-            </div>
+                <div className="form-group" style={{ marginTop: "1rem" }}>
+                  <label className="form-label">Decision Note / Rationale</label>
+                  <textarea
+                    value={statusReason}
+                    onChange={(e) => setStatusReason(e.target.value)}
+                    placeholder="Provide rationale for advancing or modifying candidate status..."
+                    rows={3}
+                    className="form-control"
+                  />
+                </div>
+              </>
+            )}
           </form>
         )}
       </Modal>

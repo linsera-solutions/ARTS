@@ -1,24 +1,26 @@
-from typing import List
+﻿from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.interview import InterviewRead, InterviewCreate, InterviewUpdate
 from app.schemas.common import ResponseEnvelope
+from app.models.enums import InterviewStatus
 from app.services.interview_service import interview_service
 
 router = APIRouter()
 
 
-@router.get("", response_model=ResponseEnvelope[List[InterviewRead]], summary="List Interviews by Application")
+@router.get("", response_model=ResponseEnvelope[List[InterviewRead]], summary="List Interviews")
 def list_interviews(
-    application_id: UUID = Query(..., description="Application ID to fetch interviews/discussions for"),
+    application_id: Optional[UUID] = Query(None, description="Filter by Application ID"),
+    status_filter: Optional[InterviewStatus] = Query(None, alias="status", description="Filter by Interview Status (Scheduled, Completed, Cancelled)"),
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve discussion/interview records for an application.
+    Retrieve discussion/interview records across the candidate pool or for a specific application.
     """
-    interviews = interview_service.list_by_application(db, application_id=application_id)
+    interviews = interview_service.list_interviews(db, application_id=application_id, status=status_filter)
     return ResponseEnvelope(data=interviews)
 
 

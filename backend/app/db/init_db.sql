@@ -194,6 +194,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     reviewer_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     overall_recommendation VARCHAR(50) CHECK (overall_recommendation IN ('Advance', 'Reject', 'Waitlist', 'Needs Discussion')),
     overall_comments TEXT,
+    strengths TEXT,
+    concerns TEXT,
     evaluation_status VARCHAR(50) NOT NULL DEFAULT 'Draft' CHECK (evaluation_status IN ('Draft', 'Submitted')),
     submission_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -208,7 +210,8 @@ CREATE TABLE IF NOT EXISTS evaluation_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     evaluation_id UUID NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
     criterion_id UUID NOT NULL REFERENCES evaluation_criteria(id) ON DELETE RESTRICT,
-    score_value NUMERIC(4, 2) NOT NULL,
+    qualitative_rating VARCHAR(100),
+    score_value NUMERIC(4, 2),
     score_comment TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -286,6 +289,22 @@ CREATE TABLE IF NOT EXISTS application_status_history (
 );
 
 -- ============================================================================
+-- 19. SYNC LOGS (Google Forms & Sheets Sync Audit)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sync_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source VARCHAR(100) NOT NULL DEFAULT 'Google Sheets / Forms',
+    status VARCHAR(50) NOT NULL,
+    total_rows INTEGER NOT NULL DEFAULT 0,
+    created_count INTEGER NOT NULL DEFAULT 0,
+    updated_count INTEGER NOT NULL DEFAULT 0,
+    rejected_count INTEGER NOT NULL DEFAULT 0,
+    error_summary TEXT,
+    details JSONB,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================================
 -- PERFORMANCE INDEXES
 -- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -317,3 +336,16 @@ VALUES
     ('UI/UX & Visual Designer', 'User experience flows, visual assets, wireframing, interface design, and aesthetic presentation.', 1, 'Open'),
     ('Space/Science Research + Game Logic', 'Domain science research, accuracy verification, game mechanics logic, and narrative fact alignment.', 1, 'Open')
 ON CONFLICT DO NOTHING;
+
+-- ============================================================================
+-- SEED DATA: APPROVED EVALUATION CRITERIA (ARTS-EDS-008)
+-- ============================================================================
+INSERT INTO evaluation_criteria (criterion_name, criterion_description, is_active)
+VALUES 
+    ('Relevant Skills & Technical Competency', 'Does the submitted evidence demonstrate skills genuinely relevant to this role? Assess what has been shown, not credentials alone.', true),
+    ('Project Experience & Demonstrable Work', 'Does the applicant submitted work history, portfolio, or GitHub show applied, hands-on experience relevant to the role?', true),
+    ('Motivation & Role Alignment', 'Does the applicant stated motivation statement reflect genuine understanding of and alignment with this role purpose within the NASA Space Apps challenge?', true),
+    ('Availability & Commitment', 'Has the applicant stated adequate and realistic availability for the challenge duration?', true),
+    ('Communication Clarity', 'Is the overall submission coherent, complete, and professional? Does the applicant communicate clearly about their background and intentions?', true)
+ON CONFLICT DO NOTHING;
+

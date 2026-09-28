@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+﻿from typing import List, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -19,6 +19,40 @@ from app.schemas.application import (
 from app.models.enums import ApplicationStatus
 from app.services.base import BaseService
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
+
+# Approved Recruitment Workflow Transition Matrix (BR-001, BR-002)
+ALLOWED_TRANSITIONS = {
+    ApplicationStatus.RECEIVED.value: [
+        ApplicationStatus.UNDER_REVIEW.value,
+        ApplicationStatus.NOT_SELECTED.value,
+        ApplicationStatus.WITHDRAWN.value,
+    ],
+    ApplicationStatus.UNDER_REVIEW.value: [
+        ApplicationStatus.SHORTLISTED.value,
+        ApplicationStatus.NOT_SELECTED.value,
+        ApplicationStatus.WITHDRAWN.value,
+    ],
+    ApplicationStatus.SHORTLISTED.value: [
+        ApplicationStatus.DISCUSSION_INTERVIEW.value,
+        ApplicationStatus.SELECTED.value,
+        ApplicationStatus.NOT_SELECTED.value,
+        ApplicationStatus.WITHDRAWN.value,
+    ],
+    ApplicationStatus.DISCUSSION_INTERVIEW.value: [
+        ApplicationStatus.SELECTED.value,
+        ApplicationStatus.SHORTLISTED.value,
+        ApplicationStatus.NOT_SELECTED.value,
+        ApplicationStatus.WITHDRAWN.value,
+    ],
+    ApplicationStatus.SELECTED.value: [
+        ApplicationStatus.WITHDRAWN.value,
+    ],
+    ApplicationStatus.NOT_SELECTED.value: [
+        ApplicationStatus.UNDER_REVIEW.value,
+        ApplicationStatus.WITHDRAWN.value,
+    ],
+    ApplicationStatus.WITHDRAWN.value: [],
+}
 
 
 class ApplicationService(BaseService[Application]):
@@ -73,7 +107,7 @@ class ApplicationService(BaseService[Application]):
     def get_detailed_application(self, db: Session, application_id: UUID) -> dict:
         """
         FR-011: Consolidated profile combining applicant record data, skills,
-        experience, availability, evidence links, evaluations, notes, and status.
+        experience, availability, evidence links, evaluations, interviews, notes, and status.
         """
         app = self.get(db, application_id)
         evaluations = db.query(Evaluation).filter(Evaluation.application_id == app.id).all()
@@ -123,7 +157,6 @@ class ApplicationService(BaseService[Application]):
 
         # 2. Match or Create Applicant (FR-005: match by email without duplicate)
         applicant = db.query(Applicant).filter(Applicant.email == email_clean).first()
-        is_existing_applicant = applicant is not None
 
         if not applicant:
             applicant = Applicant(
@@ -170,7 +203,6 @@ class ApplicationService(BaseService[Application]):
         # 4. Add Skills Claimed
         if data.skills:
             for sk in data.skills:
-                # Find or register skill in catalog
                 skill_record = (
                     db.query(Skill).filter(Skill.skill_name.ilike(sk.skill_name.strip())).first()
                 )
@@ -179,7 +211,6 @@ class ApplicationService(BaseService[Application]):
                     db.add(skill_record)
                     db.flush()
 
-                # Link skill to applicant
                 existing_sk = (
                     db.query(ApplicantSkill)
                     .filter(
@@ -221,7 +252,6 @@ class ApplicationService(BaseService[Application]):
         )
 
         if existing_app:
-            # Update existing submission motivation/availability
             if data.motivation_statement:
                 existing_app.motivation_statement = data.motivation_statement
             if data.availability_info:
@@ -311,9 +341,21 @@ class ApplicationService(BaseService[Application]):
             errors=errors,
         )
 
+    def get_allowed_transitions(self, db: Session, id: UUID) -> dict:
+        """
+        Return the permitted status transitions for an application based on its current lifecycle state.
+        """
+        application = self.get(db, id)
+        allowed = ALLOWED_TRANSITIONS.get(application.current_status, [])
+        return {
+            "application_id": application.id,
+            "current_status": application.current_status,
+            "allowed_transitions": allowed,
+        }
+
     def update_status(self, db: Session, id: UUID, data: ApplicationStatusUpdate) -> Application:
         """
-        BR-001, BR-002: Transition application status with audit trail.
+        BR-001, BR-002: Transition application status with audit trail and strict validation.
         """
         application = self.get(db, id)
         previous_status = application.current_status
@@ -322,17 +364,14 @@ class ApplicationService(BaseService[Application]):
         if previous_status == new_status:
             return application
 
-        # BR-002 Check: Moving to Selected requires prior Shortlisted or Discussion / Interview
-        if new_status == ApplicationStatus.SELECTED.value:
-            if previous_status not in [
-                ApplicationStatus.SHORTLISTED.value,
-                ApplicationStatus.DISCUSSION_INTERVIEW.value,
-            ]:
-                raise BadRequestException(
-                    f"Invalid status transition (BR-002): An application cannot move directly to "
-                    f"'Selected' from '{previous_status}'. The candidate must first be 'Shortlisted' "
-                    f"or in 'Discussion / Interview'."
-                )
+        # Enforce approved workflow transition rules
+        allowed_next = ALLOWED_TRANSITIONS.get(previous_status, [])
+        if new_status not in allowed_next:
+            raise BadRequestException(
+                f"Invalid status transition (BR-002): An application cannot move from "
+                f"'{previous_status}' to '{new_status}'. Allowed transitions: "
+                f"{', '.join(allowed_next) if allowed_next else 'None (terminal status)'}."
+            )
 
         # Update status
         application.current_status = new_status

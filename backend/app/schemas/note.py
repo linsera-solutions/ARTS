@@ -1,4 +1,4 @@
-from typing import Optional
+﻿from typing import Optional
 from datetime import datetime
 from uuid import UUID
 from pydantic import Field
@@ -15,6 +15,11 @@ class NoteBase(BaseSchema):
 
 class NoteCreate(NoteBase):
     author_id: UUID
+
+
+class NoteUpdate(BaseSchema):
+    note_text: Optional[str] = Field(None, min_length=1)
+    visibility: Optional[NoteVisibility] = None
 
 
 class NoteRead(NoteBase):

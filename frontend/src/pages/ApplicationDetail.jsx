@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { applicationsService, notesService } from '../api/services'
+import { applicationsService, notesService, evaluationsService } from '../api/services'
 import { Card } from '../components/common/Card'
 import { Badge } from '../components/common/Badge'
 import { Button } from '../components/common/Button'
@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Calendar,
   History,
+  Trash2,
 } from 'lucide-react'
 
 const APPROVED_STATUSES = [
@@ -42,6 +43,8 @@ export function ApplicationDetail() {
   const [error, setError] = useState(null)
   const [application, setApplication] = useState(null)
   const [notes, setNotes] = useState([])
+  const [evaluations, setEvaluations] = useState([])
+  const [allowedTransitions, setAllowedTransitions] = useState([])
 
   // Status update modal
   const [statusModalOpen, setStatusModalOpen] = useState(false)
@@ -57,13 +60,20 @@ export function ApplicationDetail() {
     setLoading(true)
     setError(null)
     try {
-      const [appData, notesData] = await Promise.all([
+      const [appData, notesData, evalsData, transData] = await Promise.all([
         applicationsService.get(id),
         notesService.listByEntity('Application', id),
+        evaluationsService.listByApplication(id),
+        applicationsService.getAllowedTransitions(id).catch(() => null),
       ])
       setApplication(appData)
       setNotes(notesData || [])
-      setNewStatus(appData?.current_status || '')
+      setEvaluations(evalsData || [])
+      const allowed = transData?.allowed_transitions || []
+      setAllowedTransitions(allowed)
+      if (allowed.length > 0) {
+        setNewStatus(allowed[0])
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -77,6 +87,7 @@ export function ApplicationDetail() {
 
   const handleStatusSubmit = async (e) => {
     e.preventDefault()
+    if (!newStatus) return
     setUpdatingStatus(true)
     try {
       await applicationsService.updateStatus(id, {
@@ -163,9 +174,9 @@ export function ApplicationDetail() {
             >
               Update Status
             </Button>
-            <Link to={`/evaluations?application_id=${id}`}>
+            <Link to={`/review?application_id=${id}`}>
               <Button icon={Sparkles}>
-                Record Evaluation
+                Begin Review
               </Button>
             </Link>
           </div>
@@ -299,25 +310,69 @@ export function ApplicationDetail() {
             )}
           </Card>
 
-          {/* Status Audit History Timeline */}
-          <Card title="Status History (Auditability)" className="mb-4">
-            {application.status_history && application.status_history.length > 0 ? (
-              <div className="status-history-list">
-                {application.status_history.map((hist) => (
-                  <div key={hist.id} className="history-step">
-                    <div className="history-dot" />
-                    <div>
-                      <Badge>{hist.new_status}</Badge>
-                      <span className="history-time">
-                        {new Date(hist.changed_at).toLocaleString()}
+          {/* Reviewer Evaluations Summary */}
+          <Card title="Recorded Evaluations" className="mb-4">
+            {evaluations.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {evaluations.map((ev) => (
+                  <div key={ev.id} style={{
+                    padding: '0.75rem', backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0', borderRadius: '8px',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {ev.overall_recommendation && (
+                          <span style={{
+                            fontSize: '0.78rem', fontWeight: '600',
+                            padding: '0.15rem 0.5rem', borderRadius: '9999px',
+                            backgroundColor: ev.overall_recommendation === 'Advance' ? '#f0fdf4'
+                              : ev.overall_recommendation === 'Reject' ? '#fef2f2'
+                              : ev.overall_recommendation === 'Waitlist' ? '#eff6ff' : '#fffbeb',
+                            color: ev.overall_recommendation === 'Advance' ? '#166534'
+                              : ev.overall_recommendation === 'Reject' ? '#991b1b'
+                              : ev.overall_recommendation === 'Waitlist' ? '#1e40af' : '#92400e',
+                          }}>
+                            {ev.overall_recommendation}
+                          </span>
+                        )}
+                        <Badge>{ev.evaluation_status}</Badge>
+                      </div>
+                      <span style={{ fontSize: '0.73rem', color: '#94a3b8' }}>
+                        {new Date(ev.updated_at || ev.created_at).toLocaleDateString()}
                       </span>
-                      {hist.reason && <p className="history-reason">{hist.reason}</p>}
                     </div>
+                    {ev.strengths && (
+                      <p style={{ margin: '0 0 0.2rem 0', fontSize: '0.8rem' }}>
+                        <strong style={{ color: '#166534' }}>Strengths: </strong>
+                        <span style={{ color: '#334155' }}>{ev.strengths}</span>
+                      </p>
+                    )}
+                    {ev.concerns && (
+                      <p style={{ margin: '0 0 0.2rem 0', fontSize: '0.8rem' }}>
+                        <strong style={{ color: '#991b1b' }}>Concerns: </strong>
+                        <span style={{ color: '#334155' }}>{ev.concerns}</span>
+                      </p>
+                    )}
+                    {ev.overall_comments && (
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: '#1e293b' }}>
+                        {ev.overall_comments}
+                      </p>
+                    )}
                   </div>
                 ))}
+                <div style={{ textAlign: 'right' }}>
+                  <Link to={`/review?application_id=${id}`} className="btn btn-outline btn-sm">
+                    Open Review Workspace
+                  </Link>
+                </div>
               </div>
             ) : (
-              <p className="empty-text">No status transitions recorded.</p>
+              <div>
+                <p className="empty-text" style={{ marginBottom: '0.75rem' }}>No evaluations recorded yet.</p>
+                <Link to={`/review?application_id=${id}`} className="btn btn-primary btn-sm">
+                  Begin Review
+                </Link>
+              </div>
             )}
           </Card>
 
@@ -346,11 +401,26 @@ export function ApplicationDetail() {
 
             <div className="notes-stream">
               {notes.map((note) => (
-                <div key={note.id} className="note-card">
-                  <p className="note-body">{note.note_text}</p>
-                  <span className="note-meta">
-                    {new Date(note.created_at).toLocaleString()}
-                  </span>
+                <div key={note.id} className="note-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <p className="note-body">{note.note_text}</p>
+                    <span className="note-meta">
+                      {new Date(note.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('Delete this note?')) return
+                      try {
+                        await notesService.delete(note.id)
+                        setNotes((prev) => prev.filter((n) => n.id !== note.id))
+                      } catch (e) { alert('Failed to delete note') }
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', flexShrink: 0, marginTop: '0.15rem' }}
+                    title="Delete note"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -372,6 +442,7 @@ export function ApplicationDetail() {
               variant="primary"
               onClick={handleStatusSubmit}
               loading={updatingStatus}
+              disabled={allowedTransitions.length === 0}
             >
               Update Status
             </Button>
@@ -379,33 +450,45 @@ export function ApplicationDetail() {
         }
       >
         <form onSubmit={handleStatusSubmit}>
-          <div className="form-group">
-            <label className="form-label">Select New Lifecycle Status</label>
-            <select
-              value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value)}
-              className="form-control"
-              required
-            >
-              {APPROVED_STATUSES.map((st) => (
-                <option key={st} value={st}>
-                  {st}
-                </option>
-              ))}
-            </select>
+          <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.85rem' }}>
+            Current Status: <strong>{application.current_status}</strong>
           </div>
 
-          <div className="form-group" style={{ marginTop: '1rem' }}>
-            <label className="form-label">Decision Note / Audit Reason</label>
-            <textarea
-              value={statusReason}
-              onChange={(e) => setStatusReason(e.target.value)}
-              placeholder="State the rationale for advancing or adjusting candidate status..."
-              rows={3}
-              className="form-control"
-              required
-            />
-          </div>
+          {allowedTransitions.length === 0 ? (
+            <div style={{ color: '#64748b', fontSize: '0.85rem' }}>
+              This application is in a terminal status and cannot be transitioned further.
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label className="form-label">Permitted Next Status</label>
+                <select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                  className="form-control"
+                  required
+                >
+                  {allowedTransitions.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginTop: '1rem' }}>
+                <label className="form-label">Decision Note / Audit Reason</label>
+                <textarea
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  placeholder="State the rationale for advancing or adjusting candidate status..."
+                  rows={3}
+                  className="form-control"
+                  required
+                />
+              </div>
+            </>
+          )}
         </form>
       </Modal>
     </div>

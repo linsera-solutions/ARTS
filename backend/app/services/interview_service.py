@@ -1,9 +1,11 @@
-from typing import List, Optional
+﻿from typing import List, Optional
 from uuid import UUID
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.interview import Interview
+from app.models.application import Application
 from app.models.user import User
 from app.schemas.interview import InterviewCreate, InterviewUpdate
+from app.models.enums import InterviewStatus
 from app.services.base import BaseService
 
 
@@ -11,8 +13,28 @@ class InterviewService(BaseService[Interview]):
     def __init__(self):
         super().__init__(Interview)
 
+    def list_interviews(
+        self,
+        db: Session,
+        application_id: Optional[UUID] = None,
+        status: Optional[InterviewStatus] = None,
+    ) -> List[Interview]:
+        """
+        List interview records, optionally filtered by application_id and status.
+        Eagerly loads application, applicant, and role for rich display.
+        """
+        query = db.query(Interview).options(
+            joinedload(Interview.application).joinedload(Application.applicant),
+            joinedload(Interview.application).joinedload(Application.role),
+        )
+        if application_id:
+            query = query.filter(Interview.application_id == application_id)
+        if status:
+            query = query.filter(Interview.status == status.value)
+        return query.order_by(Interview.scheduled_at.desc()).all()
+
     def list_by_application(self, db: Session, application_id: UUID) -> List[Interview]:
-        return db.query(Interview).filter(Interview.application_id == application_id).all()
+        return self.list_interviews(db, application_id=application_id)
 
     def create_interview(self, db: Session, data: InterviewCreate) -> Interview:
         interview = Interview(

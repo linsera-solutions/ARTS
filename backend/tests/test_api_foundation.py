@@ -1,69 +1,14 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from app.main import app
-from app.db.session import Base, get_db
+﻿import pytest
 from app.models.enums import ApplicationStatus, RoleStatus, UserRole, AccountStatus, ApplicantStatus
-from app.models.user import User
-from app.models.team import Role
-from app.db.init_db import APPROVED_ROLES
-
-# In-memory SQLite for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_db():
-    Base.metadata.create_all(bind=engine)
-    with TestingSessionLocal() as session:
-        # Seed test admin user
-        admin = User(
-            full_name="Team Lead",
-            email="lead@nasa.org",
-            user_role=UserRole.ADMINISTRATOR.value,
-            account_status=AccountStatus.ACTIVE.value,
-        )
-        session.add(admin)
-        # Seed approved roles
-        for r_data in APPROVED_ROLES:
-            role = Role(**r_data)
-            session.add(role)
-        session.commit()
-    yield
-    Base.metadata.drop_all(bind=engine)
-
-
-client = TestClient(app)
-
-
-def test_root_endpoint():
+def test_root_endpoint(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "Welcome to ARTS" in response.json()["message"]
 
 
-def test_health_check():
+def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
@@ -71,7 +16,7 @@ def test_health_check():
     assert "database" in data
 
 
-def test_list_roles():
+def test_list_roles(client):
     response = client.get("/api/v1/roles")
     assert response.status_code == 200
     res = response.json()
@@ -79,7 +24,7 @@ def test_list_roles():
     assert len(res["data"]) >= 4
 
 
-def test_google_forms_single_intake_and_duplicate_handling():
+def test_google_forms_single_intake_and_duplicate_handling(client):
     """
     Tests FR-001, FR-005, FR-007: Intake processing, profile creation,
     evidence links, skills, and idempotent update on re-submission.
@@ -142,7 +87,7 @@ def test_google_forms_single_intake_and_duplicate_handling():
     assert update_data["application_id"] == app_id
 
 
-def test_google_forms_batch_intake():
+def test_google_forms_batch_intake(client):
     """
     Tests FR-002, FR-003, FR-004: Batch import with accepted/rejected summary.
     """
@@ -178,7 +123,7 @@ def test_google_forms_batch_intake():
     assert len(data["errors"]) == 1
 
 
-def test_search_and_filter_applications():
+def test_search_and_filter_applications(client):
     """
     Tests multi-criteria search, role filter, status filter, and pagination.
     """
@@ -195,7 +140,7 @@ def test_search_and_filter_applications():
     assert all(a["current_status"] == "Received" for a in res_status.json()["data"]["items"])
 
 
-def test_evidence_link_management():
+def test_evidence_link_management(client):
     """
     Tests FR-015, FR-016, FR-017: Adding and removing evidence links on candidate profile.
     """
@@ -218,7 +163,7 @@ def test_evidence_link_management():
     assert del_res.status_code == 200
 
 
-def test_applicant_archive():
+def test_applicant_archive(client):
     """
     Tests FR-010: Archiving an applicant record.
     """
@@ -230,7 +175,7 @@ def test_applicant_archive():
     assert arch_res.json()["data"]["applicant_status"] == ApplicantStatus.ARCHIVED.value
 
 
-def test_business_rules_status_transitions():
+def test_business_rules_status_transitions(client):
     """
     Tests BR-001, BR-002: Status validation rules and immutable audit history.
     """

@@ -39,6 +39,17 @@ class ValidationException(AppException):
         super().__init__(message=message, code="VALIDATION_ERROR", status_code=422, details=details)
 
 
+class UnauthorizedException(AppException):
+    def __init__(self, message: str = "Unauthorized", details: Optional[Any] = None):
+        super().__init__(message=message, code="UNAUTHORIZED", status_code=401, details=details)
+
+
+class ForbiddenException(AppException):
+    def __init__(self, message: str = "Forbidden", details: Optional[Any] = None):
+        super().__init__(message=message, code="FORBIDDEN", status_code=403, details=details)
+
+
 class DatabaseException(AppException):
     def __init__(self, message: str = "Database operation failed", details: Optional[Any] = None):
         super().__init__(message=message, code="DATABASE_ERROR", status_code=500, details=details)
+

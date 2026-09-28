@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { healthService } from '../../api/services'
-import { Activity, ShieldCheck } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { Activity, ShieldCheck, LogOut, User } from 'lucide-react'
 
 export function Header() {
+  const { user, logout } = useAuth()
   const [backendState, setBackendState] = useState({
     connected: false,
     checked: false,
@@ -51,8 +53,26 @@ export function Header() {
 
         <div className="security-notice">
           <ShieldCheck size={15} />
-          <span>Human-in-the-Loop Mode</span>
+          <span>Decision-Support Mode</span>
         </div>
+
+        {user && (
+          <div className="user-profile-menu">
+            <div className="user-info">
+              <span className="user-name-label">{user.full_name || user.email}</span>
+              <span className="user-role-label">{user.user_role || 'Team Lead'}</span>
+            </div>
+            <button
+              type="button"
+              className="btn-signout"
+              onClick={logout}
+              title="Sign Out of ARTS Console"
+            >
+              <LogOut size={14} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        )}
       </div>
     </header>
   )
